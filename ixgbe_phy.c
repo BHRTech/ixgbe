@@ -16,10 +16,6 @@ static s32 ixgbe_clock_out_i2c_byte(struct ixgbe_hw *hw, u8 data);
 static s32 ixgbe_get_i2c_ack(struct ixgbe_hw *hw);
 static s32 ixgbe_clock_in_i2c_bit(struct ixgbe_hw *hw, bool *data);
 static s32 ixgbe_clock_out_i2c_bit(struct ixgbe_hw *hw, bool data);
-static void ixgbe_raise_i2c_clk(struct ixgbe_hw *hw, u32 *i2cctl);
-static void ixgbe_lower_i2c_clk(struct ixgbe_hw *hw, u32 *i2cctl);
-static s32 ixgbe_set_i2c_data(struct ixgbe_hw *hw, u32 *i2cctl, bool data);
-static bool ixgbe_get_i2c_data(struct ixgbe_hw *hw, u32 *i2cctl);
 static void ixgbe_i2c_bus_clear(struct ixgbe_hw *hw);
 static enum ixgbe_phy_type ixgbe_get_phy_type_from_id(u32 phy_id);
 static s32 ixgbe_get_phy_id(struct ixgbe_hw *hw);
@@ -2463,7 +2459,7 @@ static s32 ixgbe_clock_out_i2c_bit(struct ixgbe_hw *hw, bool data)
  *  Raises the I2C clock line '0'->'1'
  *  Negates the I2C clock output enable on X550 hardware.
  **/
-static void ixgbe_raise_i2c_clk(struct ixgbe_hw *hw, u32 *i2cctl)
+void ixgbe_raise_i2c_clk(struct ixgbe_hw *hw, u32 *i2cctl)
 {
 	u32 clk_oe_bit = IXGBE_I2C_CLK_OE_N_EN(hw);
 	u32 i = 0;
@@ -2496,7 +2492,7 @@ static void ixgbe_raise_i2c_clk(struct ixgbe_hw *hw, u32 *i2cctl)
  *  Lowers the I2C clock line '1'->'0'
  *  Asserts the I2C clock output enable on X550 hardware.
  **/
-static void ixgbe_lower_i2c_clk(struct ixgbe_hw *hw, u32 *i2cctl)
+void ixgbe_lower_i2c_clk(struct ixgbe_hw *hw, u32 *i2cctl)
 {
 
 	*i2cctl &= ~IXGBE_I2C_CLK_OUT(hw);
@@ -2518,7 +2514,7 @@ static void ixgbe_lower_i2c_clk(struct ixgbe_hw *hw, u32 *i2cctl)
  *  Sets the I2C data bit
  *  Asserts the I2C data output enable on X550 hardware.
  **/
-static s32 ixgbe_set_i2c_data(struct ixgbe_hw *hw, u32 *i2cctl, bool data)
+s32 ixgbe_set_i2c_data(struct ixgbe_hw *hw, u32 *i2cctl, bool data)
 {
 	u32 data_oe_bit = IXGBE_I2C_DATA_OE_N_EN(hw);
 
@@ -2560,7 +2556,7 @@ static s32 ixgbe_set_i2c_data(struct ixgbe_hw *hw, u32 *i2cctl, bool data)
  *  Returns the I2C data bit value
  *  Negates the I2C data output enable on X550 hardware.
  **/
-static bool ixgbe_get_i2c_data(struct ixgbe_hw *hw, u32 *i2cctl)
+bool ixgbe_get_i2c_data(struct ixgbe_hw *hw, u32 *i2cctl)
 {
 	u32 data_oe_bit = IXGBE_I2C_DATA_OE_N_EN(hw);
 

@@ -28,6 +28,7 @@
 #include <linux/bpf_trace.h>
 #include <linux/atomic.h>
 #include <linux/numa.h>
+#include <linux/i2c.h>
 #include <scsi/fc/fc_fcoe.h>
 #include <net/udp_tunnel.h>
 #include <net/pkt_cls.h>
@@ -10695,6 +10696,180 @@ static void ixgbe_set_fw_version(struct ixgbe_adapter *adapter)
 }
 
 /**
+ * ixgbe_bb_get_i2c_data - Get the I2C SDA data bit
+ * @data: associated algo data
+ *
+ * Get the I2C SDA data bit
+ **/
+static int ixgbe_bb_get_i2c_data(void *data) {
+	struct ixgbe_adapter *adapter = (struct ixgbe_adapter *)data;
+	struct ixgbe_hw *hw = &adapter->hw;
+	int res;
+	u32 i2cctl;
+
+	i2cctl = IXGBE_READ_REG(hw, IXGBE_I2CCTL(hw));
+
+	res = ixgbe_get_i2c_data(hw, &i2cctl) ? 1 : 0;
+
+	return res;
+}
+
+/**
+ * ixgbe_bb_set_i2c_data - Set the I2C SDA data bit
+ * @data: associated algo data
+ * @state: I2C data value (0 or 1) to set
+ *
+ * Set the I2C SDA data bit
+ **/
+static void ixgbe_bb_set_i2c_data(void *data, int state) {
+	struct ixgbe_adapter *adapter = (struct ixgbe_adapter *)data;
+	struct ixgbe_hw *hw = &adapter->hw;
+	u32 i2cctl;
+	s32 status;
+
+	i2cctl = IXGBE_READ_REG(hw, IXGBE_I2CCTL(hw));
+	i2cctl |= IXGBE_I2C_BB_EN(hw);
+
+	status = ixgbe_set_i2c_data(hw, &i2cctl, state ? 1 : 0);
+	if (status)
+		hw_dbg(hw, "failed to set i2c data\n");
+}
+
+/**
+ * ixgbe_bb_set_i2c_clk - Set the I2C clock state
+ * @data: pointer to the hardware structure
+ * @state: state of the clock
+ *
+ * Set the I2C clock state
+ **/
+static void ixgbe_bb_set_i2c_clk(void *data, int state) {
+	struct ixgbe_adapter *adapter = (struct ixgbe_adapter *)data;
+	struct ixgbe_hw *hw = &adapter->hw;
+	u32 i2cctl;
+
+	i2cctl = IXGBE_READ_REG(hw, IXGBE_I2CCTL(hw));
+	i2cctl |= IXGBE_I2C_BB_EN(hw);
+
+	if (state)
+		ixgbe_raise_i2c_clk(hw, &i2cctl);
+	else
+		ixgbe_lower_i2c_clk(hw, &i2cctl);
+}
+
+/**
+ * ixgbe_bb_get_i2c_clk - Get the I2C clock state
+ * @data: pointer to the hardware structure
+ *
+ * Get the I2C clock state
+ **/
+static int ixgbe_bb_get_i2c_clk(void *data) {
+	struct ixgbe_adapter *adapter = (struct ixgbe_adapter *)data;
+	struct ixgbe_hw *hw = &adapter->hw;
+	u32 i2cctl_r = 0;
+
+	i2cctl_r = IXGBE_READ_REG(hw, IXGBE_I2CCTL(hw));
+
+	return (i2cctl_r & IXGBE_I2C_CLK_IN(hw)) ? 1 : 0;
+}
+
+/**
+ * ixgbe_bb_pre_xfer - Initialize the I2C transfer
+ * @i2c_adap: pointer to the i2c adapter
+ *
+ * Initialize the I2C transfer.
+ **/
+static int ixgbe_bb_pre_xfer(struct i2c_adapter *i2c_adap) {
+	struct i2c_algo_bit_data *bdata = (struct i2c_algo_bit_data *)i2c_adap->algo_data;
+	struct ixgbe_adapter *adapter = (struct ixgbe_adapter *)bdata->data;
+	struct ixgbe_hw *hw = &adapter->hw;
+
+	u32 i2cctl = IXGBE_READ_REG(hw, IXGBE_I2CCTL(hw));
+	u32 data_oe_bit = IXGBE_I2C_DATA_OE_N_EN(hw);
+
+	u32 swfw_mask = hw->phy.phy_semaphore_mask;
+
+	if (hw->mac.ops.acquire_swfw_sync(hw, swfw_mask))
+		return IXGBE_ERR_SWFW_SYNC;
+
+	adapter->i2c_swfw_mask = swfw_mask;
+
+	if (data_oe_bit) {
+		i2cctl |= IXGBE_I2C_DATA_OUT(hw);
+		i2cctl |= data_oe_bit;
+		IXGBE_WRITE_REG(hw, IXGBE_I2CCTL(hw), i2cctl);
+		IXGBE_WRITE_FLUSH(hw);
+	}
+
+	return 0;
+}
+
+/**
+ * ixgbe_bb_post_xfer - Cleanup after the I2C transfer
+ * @i2c_adap: pointer to the i2c adapter
+ *
+ * Cleanup after the I2C transfer.
+ **/
+static void ixgbe_bb_post_xfer(struct i2c_adapter *i2c_adap) {
+	struct i2c_algo_bit_data *bdata = (struct i2c_algo_bit_data *)i2c_adap->algo_data;
+	struct ixgbe_adapter *adapter = (struct ixgbe_adapter *)bdata->data;
+	struct ixgbe_hw *hw = &adapter->hw;
+
+	u32 i2cctl = IXGBE_READ_REG(hw, IXGBE_I2CCTL(hw));
+	u32 data_oe_bit = IXGBE_I2C_DATA_OE_N_EN(hw);
+	u32 clk_oe_bit = IXGBE_I2C_CLK_OE_N_EN(hw);
+	u32 bb_en_bit = IXGBE_I2C_BB_EN(hw);
+
+	// disable the hardware bit-bang mode
+	if (bb_en_bit || data_oe_bit || clk_oe_bit) {
+		i2cctl &= ~bb_en_bit;
+		i2cctl |= data_oe_bit | clk_oe_bit;
+		IXGBE_WRITE_REG(hw, IXGBE_I2CCTL(hw), i2cctl);
+		IXGBE_WRITE_FLUSH(hw);
+	}
+
+	hw->mac.ops.release_swfw_sync(hw, adapter->i2c_swfw_mask);
+}
+
+static const struct i2c_algo_bit_data ixgbe_i2c_algo = {
+	.setsda		= ixgbe_bb_set_i2c_data,
+	.setscl		= ixgbe_bb_set_i2c_clk,
+	.getsda		= ixgbe_bb_get_i2c_data,
+	.getscl		= ixgbe_bb_get_i2c_clk,
+	.pre_xfer	= ixgbe_bb_pre_xfer,
+	.post_xfer	= ixgbe_bb_post_xfer,
+	.udelay		= 5,
+	.timeout	= 20,
+};
+
+/**
+ * ixgbe_remove_i2c - Cleanup the I2C interface
+ * @adapter: pointer to the adapter struct
+ **/
+static void ixgbe_remove_i2c(struct ixgbe_adapter *adapter) {
+	i2c_del_adapter(&adapter->i2c_adap);
+}
+
+/**
+ * ixgbe_init_i2c - Initialize the exposed I2C adapter
+ * @adapter: Handle to ixgbe adapter
+ **/
+static int ixgbe_init_i2c(struct ixgbe_adapter *adapter)
+{
+	int status = 0;
+
+	adapter->i2c_adap.owner = THIS_MODULE;
+	adapter->i2c_algo = ixgbe_i2c_algo;
+	adapter->i2c_algo.data = adapter;
+	adapter->i2c_adap.algo_data = &adapter->i2c_algo;
+	adapter->i2c_adap.dev.parent = &adapter->pdev->dev;
+	strlcpy(adapter->i2c_adap.name, "ixgbe BB",
+		sizeof(adapter->i2c_adap.name));
+	status = i2c_bit_add_bus(&adapter->i2c_adap);
+
+	return status;
+}
+
+/**
  * ixgbe_probe - Device Initialization Routine
  * @pdev: PCI device information struct
  * @ent: entry in ixgbe_pci_tbl
@@ -11136,6 +11311,10 @@ skip_sriov:
 		e_err(probe, "failed to allocate sysfs resources\n");
 #endif /* CONFIG_IXGBE_HWMON */
 
+	err = ixgbe_init_i2c(adapter);
+	if (err)
+		e_err(probe, "failed to init i2c interface\n");
+
 	ixgbe_dbg_adapter_init(adapter);
 
 	/* setup link for SFP devices with MNG FW, else wait for IXGBE_UP */
@@ -11212,6 +11391,8 @@ static void ixgbe_remove(struct pci_dev *pdev)
 #ifdef CONFIG_IXGBE_HWMON
 	ixgbe_sysfs_exit(adapter);
 #endif /* CONFIG_IXGBE_HWMON */
+
+	ixgbe_remove_i2c(adapter);
 
 	/* remove the added san mac */
 	ixgbe_del_sanmac_netdev(netdev);
