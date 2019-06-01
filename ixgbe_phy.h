@@ -174,4 +174,8 @@ s32 ixgbe_read_i2c_combined_generic_int(struct ixgbe_hw *, u8 addr, u16 reg,
 					u16 *val, bool lock);
 s32 ixgbe_write_i2c_combined_generic_int(struct ixgbe_hw *, u8 addr, u16 reg,
 					 u16 val, bool lock);
+bool ixgbe_get_i2c_data(struct ixgbe_hw *hw, u32 *i2cctl);
+s32 ixgbe_set_i2c_data(struct ixgbe_hw *hw, u32 *i2cctl, bool data);
+void ixgbe_raise_i2c_clk(struct ixgbe_hw *hw, u32 *i2cctl);
+void ixgbe_lower_i2c_clk(struct ixgbe_hw *hw, u32 *i2cctl);
 #endif /* _IXGBE_PHY_H_ */

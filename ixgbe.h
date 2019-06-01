@@ -18,6 +18,9 @@
 #include <linux/net_tstamp.h>
 #include <linux/ptp_clock_kernel.h>
 
+#include <linux/i2c.h>
+#include <linux/i2c-algo-bit.h>
+
 #include "ixgbe_type.h"
 #include "ixgbe_common.h"
 #include "ixgbe_dcb.h"
@@ -769,6 +772,11 @@ struct ixgbe_adapter {
 #ifdef CONFIG_IXGBE_IPSEC
 	struct ixgbe_ipsec *ipsec;
 #endif /* CONFIG_IXGBE_IPSEC */
+
+	/* I2C support */
+	struct i2c_algo_bit_data i2c_algo;
+	struct i2c_adapter i2c_adap;
+	u32 i2c_swfw_mask;
 };
 
 static inline u8 ixgbe_max_rss_indices(struct ixgbe_adapter *adapter)
